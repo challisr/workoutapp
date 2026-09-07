@@ -1,4 +1,4 @@
-const CACHE = "kicker-app-v1";
+const CACHE = "kicker-app-v2";
 const CORE_ASSETS = ["/", "/index.html", "/styles.css", "/app.js", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
@@ -17,14 +17,17 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Network-first for API calls, cache-first for static shell
+// Network-first for everything: always get the latest app when online,
+// only fall back to the cached copy if there's no connection at all.
 self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
-  if (url.pathname.startsWith("/api/")) {
-    event.respondWith(fetch(event.request).catch(() => new Response(JSON.stringify({ error: "offline" }), { headers: { "Content-Type": "application/json" } })));
-    return;
-  }
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    fetch(event.request)
+      .then((response) => {
+        // Keep the cache updated with whatever we just fetched, for offline fallback
+        const responseClone = response.clone();
+        caches.open(CACHE).then((cache) => cache.put(event.request, responseClone)).catch(() => {});
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
