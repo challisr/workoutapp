@@ -629,6 +629,7 @@
     const weeks = last8WeeksCompletion();
     const streak = currentStreak();
     const kickLog = (STATE.kickLog || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+    const consistencyLog = (STATE.consistencyLog || []).slice().sort((a, b) => a.date.localeCompare(b.date));
 
     el.innerHTML = `
       <div class="stat-row">
@@ -669,6 +670,42 @@
         <button class="btn btn-primary btn-block" id="add-kick-btn" style="margin-top:8px;">Log Kick</button>
         ` : ""}
       </div>
+      <div class="card">
+        <h2>Consistency</h2>
+        <p style="font-size:12px;color:var(--muted);margin-top:-2px;">The longest distance he can make repeatedly \u2014 often more useful than a single best kick.</p>
+        ${consistencyLog.length > 1 ? `
+        <div class="legend-row">
+          <span class="legend-dot" style="background:#B8860B;"></span> Made 3 in a row
+          <span class="legend-dot" style="background:#6E1422;margin-left:14px;"></span> Made 5 in a row
+        </div>
+        <canvas id="consistency-chart" width="600" height="180"></canvas>` : `<p style="font-size:13px;color:var(--muted);">Log a couple of sessions to see the trend.</p>`}
+        ${ROLE === "athlete" ? `
+        <div class="field-row" style="margin-top:10px;">
+          <div>
+            <label>Date</label>
+            <input type="date" id="consistency-date" value="${todayKey()}" />
+          </div>
+        </div>
+        <div class="field-row">
+          <div>
+            <label>Made 3 in a row at (yards)</label>
+            <input type="number" id="consistency-three" placeholder="e.g. 38" />
+          </div>
+          <div>
+            <label>Made 5 in a row at (yards)</label>
+            <input type="number" id="consistency-five" placeholder="e.g. 33" />
+          </div>
+        </div>
+        <label>Note (optional)</label>
+        <input type="text" id="consistency-note" placeholder="Conditions, how it felt..." />
+        <button class="btn btn-primary btn-block" id="add-consistency-btn" style="margin-top:8px;">Log Consistency</button>
+        ` : ""}
+        ${consistencyLog.length ? consistencyLog.slice(-5).reverse().map((c) => `
+          <div class="history-item">
+            <div class="history-date">${c.date}</div>
+            <div class="history-progress">${c.threeInRow != null ? `3-in-a-row: ${c.threeInRow}y` : ""}${c.threeInRow != null && c.fiveInRow != null ? " · " : ""}${c.fiveInRow != null ? `5-in-a-row: ${c.fiveInRow}y` : ""}${c.note ? " · " + esc(c.note) : ""}</div>
+          </div>`).join("") : ""}
+      </div>
       ${kickLog.length ? `<div class="card"><h2>Recent Kicks</h2>${kickLog.slice(-8).reverse().map((k) => `
         <div class="history-item">
           <div class="history-date">${k.date} — ${esc(k.type)}</div>
@@ -678,6 +715,7 @@
 
     drawBarChart(document.getElementById("bar-chart"), weeks);
     if (kickLog.length > 1) drawLineChart(document.getElementById("line-chart"), kickLog);
+    if (consistencyLog.length > 1) drawConsistencyChart(document.getElementById("consistency-chart"), consistencyLog);
 
     const addKickBtn = document.getElementById("add-kick-btn");
     if (addKickBtn) {
@@ -692,6 +730,24 @@
           STATE.kickLog.push({ date, type, distance, note });
         });
         toast("Kick logged");
+      });
+    }
+
+    const addConsistencyBtn = document.getElementById("add-consistency-btn");
+    if (addConsistencyBtn) {
+      addConsistencyBtn.addEventListener("click", () => {
+        const date = document.getElementById("consistency-date").value || todayKey();
+        const threeRaw = document.getElementById("consistency-three").value.trim();
+        const fiveRaw = document.getElementById("consistency-five").value.trim();
+        const note = document.getElementById("consistency-note").value.trim();
+        const threeInRow = threeRaw ? parseFloat(threeRaw) : null;
+        const fiveInRow = fiveRaw ? parseFloat(fiveRaw) : null;
+        if (threeInRow == null && fiveInRow == null) { toast("Enter at least one distance"); return; }
+        save(() => {
+          STATE.consistencyLog = STATE.consistencyLog || [];
+          STATE.consistencyLog.push({ date, threeInRow, fiveInRow, note });
+        });
+        toast("Consistency logged");
       });
     }
   }
@@ -804,6 +860,64 @@
       ctx.arc(x, y, 3, 0, Math.PI * 2);
       ctx.fill();
     });
+
+    ctx.fillStyle = "#6B7280";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(Math.round(max) + "y", 2, 14);
+    ctx.fillText(Math.round(min) + "y", 2, h - 22);
+  }
+
+  function drawConsistencyChart(canvas, entries) {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    const padding = 30;
+
+    const times = entries.map((e) => new Date(e.date).getTime());
+    const minT = Math.min(...times), maxT = Math.max(...times);
+    const rangeT = (maxT - minT) || 1;
+
+    const allVals = [];
+    entries.forEach((e) => {
+      if (e.threeInRow != null) allVals.push(e.threeInRow);
+      if (e.fiveInRow != null) allVals.push(e.fiveInRow);
+    });
+    if (!allVals.length) return;
+    const min = Math.min(...allVals) - 3;
+    const max = Math.max(...allVals) + 3;
+    const range = max - min || 1;
+
+    const xFor = (t) => padding + ((t - minT) / rangeT) * (w - padding * 2);
+    const yFor = (v) => 10 + (1 - (v - min) / range) * (h - 30);
+
+    ctx.strokeStyle = "#E2E5EA";
+    ctx.beginPath();
+    ctx.moveTo(padding, 10);
+    ctx.lineTo(padding, h - 20);
+    ctx.lineTo(w - 8, h - 20);
+    ctx.stroke();
+
+    function drawSeries(key, color) {
+      const pts = entries
+        .filter((e) => e[key] != null)
+        .map((e) => ({ x: xFor(new Date(e.date).getTime()), y: yFor(e[key]) }));
+      if (!pts.length) return;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+      ctx.stroke();
+      ctx.fillStyle = color;
+      pts.forEach((p) => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+    drawSeries("threeInRow", "#B8860B");
+    drawSeries("fiveInRow", "#6E1422");
 
     ctx.fillStyle = "#6B7280";
     ctx.font = "10px sans-serif";
