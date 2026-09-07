@@ -287,6 +287,82 @@ canvas { width: 100%; height: auto; display: block; }
   vertical-align: middle;
 }
 
+.cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.cal-nav {
+  border: none;
+  background: var(--bg);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 18px;
+  color: var(--navy);
+  font-weight: 700;
+}
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.cal-grid-labels {
+  margin-bottom: 4px;
+}
+.cal-label {
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.cal-cell {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 13px;
+  cursor: pointer;
+}
+.cal-empty {
+  background: none;
+  cursor: default;
+}
+.cal-daynum {
+  position: relative;
+  z-index: 1;
+}
+.cal-done {
+  background: #1E8E5A;
+  color: white;
+  font-weight: 700;
+}
+.cal-missed {
+  background: #FBEAEA;
+  color: var(--red);
+}
+.cal-today {
+  box-shadow: 0 0 0 2px var(--navy) inset;
+}
+.cal-selected {
+  box-shadow: 0 0 0 2px var(--gold) inset;
+}
+.cal-dot {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.cal-dot-video {
+  background: var(--gold);
+}
+
 .history-item {
   border-bottom: 1px solid var(--border);
   padding: 10px 0;

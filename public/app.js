@@ -221,7 +221,7 @@
         ${tabBtn("today", "📋", "Today")}
         ${tabBtn("week", "📅", "Week")}
         ${tabBtn("progress", "📈", "Progress")}
-        ${tabBtn("history", "🕓", "History")}
+        ${tabBtn("history", "🗓️", "Calendar")}
         ${tabBtn("team", "👥", "Team" + (ROLE === "athlete" && pc ? ` <span class="badge-count">${pc}</span>` : ""))}
       </div>
     `;
@@ -246,14 +246,20 @@
 
   // ---------- TODAY ----------
   function renderToday(el) {
-    const dId = todayId();
+    el.innerHTML = dayDetailHtml(todayKey(), { heading: "Today" });
+    bindDayDetailHandlers(el, todayKey());
+  }
+
+  function dayDetailHtml(dateKey, opts) {
+    opts = opts || {};
+    const dId = WEEKDAY_TO_ID[new Date(dateKey + "T12:00:00").getDay()];
     const day = findDay(dId);
-    const dateKey = todayKey();
     const log = STATE.logs[dateKey] || { completed: {}, note: "" };
+    const heading = opts.heading || new Date(dateKey + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 
     let exHtml = "";
     if (!day.exercises.length) {
-      exHtml = `<div class="empty-state">No exercises listed for today.</div>`;
+      exHtml = `<div class="empty-state">No exercises listed.</div>`;
     } else {
       exHtml = day.exercises
         .filter((e) => e.status !== "proposed-delete" || ROLE === "coach")
@@ -261,32 +267,35 @@
         .join("");
     }
 
-    el.innerHTML = `
+    return `
       <div class="card today-card">
-        <span class="focus-tag">Today · ${day.focus}</span>
-        <h2>${day.name}</h2>
+        <span class="focus-tag">${esc(heading)} · ${esc(day.focus)}</span>
+        <h2>${esc(day.name)}</h2>
         ${exHtml}
       </div>
       ${ROLE === "athlete" ? `
       <div class="card">
-        <h2>Today's Note</h2>
-        <textarea id="today-note" placeholder="How did it feel? Any soreness, tightness, or wins to note?">${esc(log.note || "")}</textarea>
+        <h2>Note</h2>
+        <textarea id="day-note" placeholder="How did it feel? Any soreness, tightness, or wins to note?">${esc(log.note || "")}</textarea>
         <button class="btn btn-primary btn-block" id="save-note-btn" style="margin-top:8px;">Save Note</button>
       </div>
       <div class="card">
-        <h2>Today's Video (optional)</h2>
+        <h2>Video (optional)</h2>
         <p style="font-size:12px;color:var(--muted);margin-top:-2px;">Paste a link — an unlisted YouTube video or a Google Drive share link both work.</p>
-        <input type="text" id="today-video" placeholder="https://youtu.be/..." value="${esc(log.videoUrl || "")}" />
+        <input type="text" id="day-video" placeholder="https://youtu.be/..." value="${esc(log.videoUrl || "")}" />
         <button class="btn btn-outline btn-block" id="save-video-btn" style="margin-top:8px;">Save Video Link</button>
         ${log.videoUrl ? videoHtml(log.videoUrl) : ""}
       </div>` : `
       <div class="card">
-        <h2>Athlete's Note Today</h2>
-        <p style="font-size:13px; color:var(--muted);">${log.note ? esc(log.note) : "No note logged yet today."}</p>
+        <h2>Athlete's Note</h2>
+        <p style="font-size:13px; color:var(--muted);">${log.note ? esc(log.note) : "No note logged."}</p>
         ${log.videoUrl ? videoHtml(log.videoUrl) : ""}
       </div>`}
     `;
+  }
 
+  function bindDayDetailHandlers(el, dateKey) {
+    const dId = WEEKDAY_TO_ID[new Date(dateKey + "T12:00:00").getDay()];
     if (ROLE === "athlete") {
       el.querySelectorAll(".exercise-check").forEach((cb) => {
         cb.addEventListener("change", () => {
@@ -304,7 +313,7 @@
         saveNoteBtn.addEventListener("click", () => {
           save(() => {
             const l = STATE.logs[dateKey] || { completed: {}, note: "" };
-            l.note = document.getElementById("today-note").value;
+            l.note = document.getElementById("day-note").value;
             l.date = dateKey;
             STATE.logs[dateKey] = l;
           });
@@ -314,7 +323,7 @@
       const saveVideoBtn = document.getElementById("save-video-btn");
       if (saveVideoBtn) {
         saveVideoBtn.addEventListener("click", () => {
-          const val = document.getElementById("today-video").value.trim();
+          const val = document.getElementById("day-video").value.trim();
           save(() => {
             const l = STATE.logs[dateKey] || { completed: {}, note: "" };
             l.videoUrl = val;
@@ -417,6 +426,8 @@
   let EDIT_MODE = false;
   let ADD_FORM_OPEN = null; // day id currently showing add-exercise form
   let EDIT_FORM_OPEN = null; // exercise id currently being edited
+  let CAL_MONTH = (() => { const d = new Date(); d.setDate(1); return d; })();
+  let CAL_SELECTED = null;
 
   function renderWeek(el) {
     const canEdit = ROLE !== "family";
@@ -926,27 +937,95 @@
     ctx.fillText(Math.round(min) + "y", 2, h - 22);
   }
 
-  // ---------- HISTORY ----------
+  // ---------- CALENDAR / HISTORY ----------
   function renderHistory(el) {
     const entries = Object.values(STATE.logs || {}).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-    if (!entries.length) {
-      el.innerHTML = `<div class="card"><div class="empty-state">No workouts logged yet.</div></div>`;
-      return;
+
+    el.innerHTML = `
+      <div class="card">
+        <div class="cal-header">
+          <button class="cal-nav" id="cal-prev">‹</button>
+          <h2 style="margin:0;">${CAL_MONTH.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</h2>
+          <button class="cal-nav" id="cal-next">›</button>
+        </div>
+        <div class="cal-grid cal-grid-labels">
+          ${["S", "M", "T", "W", "T", "F", "S"].map((d) => `<div class="cal-label">${d}</div>`).join("")}
+        </div>
+        <div class="cal-grid">${calendarCells()}</div>
+      </div>
+      <div id="cal-detail"></div>
+      <div class="card">
+        <h2>All Entries</h2>
+        ${entries.length ? entries.map((log) => {
+          const dayPlan = findDay(WEEKDAY_TO_ID[new Date(log.date + "T12:00:00").getDay()]);
+          const totalEx = dayPlan ? dayPlan.exercises.filter((e) => e.status === "approved").length : 0;
+          const doneCount = Object.values(log.completed || {}).filter(Boolean).length;
+          return `<div class="history-item">
+            <div class="history-date">${log.date}</div>
+            <div class="history-progress">${doneCount}/${totalEx} exercises completed</div>
+            ${log.note ? `<div class="history-note">"${esc(log.note)}"</div>` : ""}
+            ${log.videoUrl ? videoHtml(log.videoUrl) : ""}
+          </div>`;
+        }).join("") : `<div class="empty-state">No workouts logged yet.</div>`}
+      </div>
+    `;
+
+    document.getElementById("cal-prev").addEventListener("click", () => {
+      CAL_MONTH.setMonth(CAL_MONTH.getMonth() - 1);
+      render();
+    });
+    document.getElementById("cal-next").addEventListener("click", () => {
+      CAL_MONTH.setMonth(CAL_MONTH.getMonth() + 1);
+      render();
+    });
+    el.querySelectorAll("[data-cal-date]").forEach((cell) => {
+      cell.addEventListener("click", () => {
+        CAL_SELECTED = cell.dataset.calDate === CAL_SELECTED ? null : cell.dataset.calDate;
+        render();
+      });
+    });
+
+    if (CAL_SELECTED) {
+      const detailEl = document.getElementById("cal-detail");
+      const label = new Date(CAL_SELECTED + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+      detailEl.innerHTML = dayDetailHtml(CAL_SELECTED, { heading: label });
+      bindDayDetailHandlers(detailEl, CAL_SELECTED);
     }
-    el.innerHTML = `<div class="card">
-      <h2>Workout History</h2>
-      ${entries.map((log) => {
-        const dayPlan = findDay(WEEKDAY_TO_ID[new Date(log.date + "T12:00:00").getDay()]);
-        const totalEx = dayPlan ? dayPlan.exercises.filter((e) => e.status === "approved").length : 0;
-        const doneCount = Object.values(log.completed || {}).filter(Boolean).length;
-        return `<div class="history-item">
-          <div class="history-date">${log.date}</div>
-          <div class="history-progress">${doneCount}/${totalEx} exercises completed</div>
-          ${log.note ? `<div class="history-note">"${esc(log.note)}"</div>` : ""}
-          ${log.videoUrl ? videoHtml(log.videoUrl) : ""}
-        </div>`;
-      }).join("")}
-    </div>`;
+  }
+
+  function calendarCells() {
+    const year = CAL_MONTH.getFullYear();
+    const month = CAL_MONTH.getMonth();
+    const firstDayOfWeek = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const today = todayKey();
+
+    let html = "";
+    for (let i = 0; i < firstDayOfWeek; i++) {
+      html += `<div class="cal-cell cal-empty"></div>`;
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateObj = new Date(year, month, d);
+      const dateKey = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const log = STATE.logs[dateKey];
+      const dayId = WEEKDAY_TO_ID[dateObj.getDay()];
+      const dayPlan = findDay(dayId);
+      const hasApprovedExercises = dayPlan && dayPlan.exercises.some((e) => e.status === "approved");
+      const doneCount = log ? Object.values(log.completed || {}).filter(Boolean).length : 0;
+      const isPast = dateKey < today;
+      const isToday = dateKey === today;
+      const isSelected = dateKey === CAL_SELECTED;
+
+      let statusClass = "";
+      if (doneCount > 0) statusClass = "cal-done";
+      else if (isPast && hasApprovedExercises) statusClass = "cal-missed";
+
+      html += `<div class="cal-cell ${statusClass} ${isToday ? "cal-today" : ""} ${isSelected ? "cal-selected" : ""}" data-cal-date="${dateKey}">
+        <span class="cal-daynum">${d}</span>
+        ${log && log.videoUrl ? `<span class="cal-dot cal-dot-video"></span>` : ""}
+      </div>`;
+    }
+    return html;
   }
 
   // ---------- TEAM / SETTINGS ----------
