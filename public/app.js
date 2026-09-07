@@ -142,6 +142,15 @@
   function todayId() {
     return WEEKDAY_TO_ID[new Date().getDay()];
   }
+  function dateLabelForDayId(id) {
+    const offset = WEEKDAY_TO_ID.indexOf(id);
+    const today = new Date();
+    const sunday = new Date(today);
+    sunday.setDate(today.getDate() - today.getDay());
+    const d = new Date(sunday);
+    d.setDate(sunday.getDate() + offset);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
   function todayKey() {
     return new Date().toISOString().slice(0, 10);
   }
@@ -161,6 +170,10 @@
     clearTimeout(t._timer);
     t._timer = setTimeout(() => t.classList.remove("show"), 2200);
   }
+  function exercisePhotoUrl(name) {
+    return "https://www.google.com/search?tbm=isch&q=" + encodeURIComponent(name + " exercise proper form");
+  }
+
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
@@ -270,7 +283,7 @@
     return `
       <div class="card today-card">
         <span class="focus-tag">${esc(heading)} · ${esc(day.focus)}</span>
-        <h2>${esc(day.name)}</h2>
+        <h2>${esc(day.name)} <span class="date-sub">${esc(new Date(dateKey + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</span></h2>
         ${exHtml}
       </div>
       ${ROLE === "athlete" ? `
@@ -446,7 +459,7 @@
     STATE.days.forEach((day) => {
       html += `<div class="card" data-day="${day.id}">
         <span class="focus-tag">${day.id === todayId() ? "TODAY · " : ""}${esc(day.focus)}</span>
-        <h2>${esc(day.name)}</h2>
+        <h2>${esc(day.name)} <span class="date-sub">${esc(dateLabelForDayId(day.id))}</span></h2>
         <div class="exercise-list">
           ${day.exercises.map((e) => (canEdit && EDIT_MODE) ? editableExerciseRow(day.id, e) : exerciseRow(e, {})).join("") || `<div class="empty-state">No exercises.</div>`}
         </div>
@@ -504,6 +517,7 @@
           ${e.notes ? `<div class="exercise-notes">${esc(e.notes)}</div>` : ""}
           ${isPending ? pendingActionsHtml(e) : `
           <div class="pending-actions">
+            <a class="btn btn-outline btn-sm" href="${exercisePhotoUrl(e.name)}" target="_blank" rel="noopener">📷 Photos</a>
             <button class="btn btn-outline btn-sm" data-edit-ex="${e.id}">Edit</button>
             <button class="btn btn-outline danger btn-sm" data-delete-ex="${e.id}">Delete</button>
           </div>`}

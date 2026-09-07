@@ -132,6 +132,12 @@ body {
   border: 2px solid var(--navy);
 }
 
+.date-sub {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 14px;
+}
+
 .exercise {
   display: flex;
   align-items: flex-start;
